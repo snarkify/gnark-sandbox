@@ -22,7 +22,7 @@ fn main() {
         .env("CGO_ENABLED", "1")
         .args([
             "build",
-            "-tags=debug",
+            "-tags=debug,icicle",
             "-o",
             dest.to_str().unwrap(),
             "-buildmode=c-archive",
@@ -55,6 +55,18 @@ fn main() {
     // Link the Go library
     println!("cargo:rustc-link-search=native={}", dest_path.display());
     println!("cargo:rustc-link-lib=static={}", lib_name);
+
+    println!("cargo:rustc-link-search=native=/usr/local/lib");
+    println!("cargo:rustc-link-search=native=/usr/local/lib/backend/bn254/cuda");
+    println!("cargo:rustc-link-search=native=/usr/local/lib/backend/cuda");
+
+    println!("cargo:rustc-link-lib=dylib=icicle_curve_bn254");
+    println!("cargo:rustc-link-lib=dylib=icicle_device");
+    println!("cargo:rustc-link-lib=dylib=icicle_field_bn254");
+
+    println!("cargo:rustc-link-lib=dylib=icicle_backend_cuda_device");
+    println!("cargo:rustc-link-lib=dylib=icicle_backend_cuda_curve_bn254");
+    println!("cargo:rustc-link-lib=dylib=icicle_backend_cuda_field_bn254");
 
     // Static linking doesn't really work on macos, so we need to link some system libs
     if cfg!(target_os = "macos") {

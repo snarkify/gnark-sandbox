@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/consensys/gnark-crypto/ecc"
+	"github.com/consensys/gnark/backend"
 	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/backend/plonk"
 	"github.com/consensys/gnark/constraint"
@@ -104,7 +105,7 @@ func ProveGroth16(dataDir string, witnessPath string) Proof {
 	start := time.Now()
 	os.Setenv("CONSTRAINTS_JSON", dataDir+"/"+constraintsJsonFile)
 	os.Setenv("GROTH16", "1")
-	fmt.Printf("Setting environment variables took %s\n", time.Since(start))
+	fmt.Printf("SETTING ENVIRONMENT VARIABLES TOOK %s\n", time.Since(start))
 
 	// Read the R1CS.
 	globalMutex.Lock()
@@ -166,7 +167,7 @@ func ProveGroth16(dataDir string, witnessPath string) Proof {
 
 	start = time.Now()
 	// Generate the proof.
-	proof, err := groth16.Prove(globalR1cs, globalPk, witness)
+	proof, err := groth16.Prove(globalR1cs, globalPk, witness, backend.WithIcicleAcceleration())
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		panic(err)
