@@ -1,0 +1,3 @@
+[alias]
+test-groth16 = "run --bin gnark-cli -- test --system groth16 test-data/groth16_circuit/groth16_witness.json test-data/groth16_circuit/constraints.json"
+prove-groth16 = "run --bin gnark-cli -- prove --system groth16 test-data/groth16_circuit test-data/groth16_circuit/groth16_witness.json test-data/groth16_output/proof.bin"

@@ -1,0 +1,36 @@
+# Rust build artifacts
+target/
+**/*.rs.bk
+Cargo.lock
+
+# Generated files
+*.gen.rs
+*.gen.go
+
+# IDE/editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Go build artifacts
+*.o
+*.a
+*.so
+*.dll
+*.dylib
+out/
+
+# Test outputs
+*.bin
+
+test-data
