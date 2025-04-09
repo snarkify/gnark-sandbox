@@ -62,6 +62,9 @@ RUN --mount=type=cache,target=/root/.cache/icicle-gnark \
     fi;
 
 # Build the gnark-ffi CLI with CUDA support
+
+WORKDIR /gnark-sandbox
+
 RUN \
   --mount=type=cache,target=/root/.cargo/registry \
   --mount=type=cache,target=/gnark-sandbox/target \
@@ -79,7 +82,8 @@ COPY --from=cuda-base /usr/local/lib/libicicle_field_bn254.so /usr/local/lib/lib
 
 # Set the backend lib location and copy them
 ENV ICICLE_BACKEND_INSTALL_DIR=/usr/local/lib/backend
-COPY --from=cuda-base /usr/local/lib/backend/**/*.so /usr/local/lib/backend
+COPY --from=cuda-base /usr/local/lib/backend/bn254/cuda/*.so /usr/local/lib/backend
+COPY --from=cuda-base /usr/local/lib/backend/cuda/*.so /usr/local/lib/backend
 
 ENV LD_LIBRARY_PATH=/usr/local/lib:/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 

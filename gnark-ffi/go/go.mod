@@ -2,12 +2,12 @@ module github.com/succinctlabs/sp1-recursion-gnark
 
 go 1.22.0
 
-require github.com/consensys/gnark-crypto v0.17.0
-
 require (
-	github.com/ingonyama-zk/icicle-gnark/v3 v3.2.2 // indirect
-	github.com/ingonyama-zk/icicle/v3 v3.1.1-0.20241118092657-fccdb2f0921b // indirect
+	github.com/consensys/gnark v0.0.0-20250406100832-60aade619880
+	github.com/consensys/gnark-crypto v0.17.1-0.20250326164229-5fd6610ac2a1
 )
+
+require github.com/ingonyama-zk/icicle-gnark/v3 v3.2.2 // indirect
 
 require (
 	github.com/bits-and-blooms/bitset v1.20.0 // indirect

@@ -20,6 +20,7 @@ fn main() {
     let status = Command::new("go")
         .current_dir("go")
         .env("CGO_ENABLED", "1")
+        .env("CC", "clang")
         .args([
             "build",
             "-tags=debug,icicle",
