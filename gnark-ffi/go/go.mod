@@ -3,16 +3,17 @@ module github.com/succinctlabs/sp1-recursion-gnark
 go 1.22.0
 
 require (
-	github.com/consensys/gnark v0.0.0-20250406100832-60aade619880
+	github.com/consensys/gnark v0.0.0
 	github.com/consensys/gnark-crypto v0.17.1-0.20250326164229-5fd6610ac2a1
+	github.com/ingonyama-zk/icicle-gnark/v3 v3.2.2
 )
 
-require github.com/ingonyama-zk/icicle-gnark/v3 v3.2.2 // indirect
+replace github.com/consensys/gnark => ../../local-deps/github.com/consensys/gnark
 
 require (
 	github.com/bits-and-blooms/bitset v1.20.0 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
-	github.com/consensys/bavard v0.1.29 // indirect
+	github.com/consensys/bavard v0.1.31-0.20250314194434-b30d4344e6d4 // indirect
 	github.com/consensys/gnark-ignition-verifier v0.0.0-20230527014722-10693546ab33
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
@@ -31,4 +32,3 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
-

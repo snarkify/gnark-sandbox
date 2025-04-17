@@ -31,6 +31,7 @@ fn main() {
         ])
         .status()
         .expect("Failed to build Go library");
+
     if !status.success() {
         panic!("Go build failed");
     }

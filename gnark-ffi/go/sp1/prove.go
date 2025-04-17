@@ -14,6 +14,7 @@ import (
 	"github.com/consensys/gnark/backend/plonk"
 	"github.com/consensys/gnark/constraint"
 	"github.com/consensys/gnark/frontend"
+	"github.com/consensys/gnark/logger"
 )
 
 var globalMutex sync.RWMutex
@@ -105,6 +106,11 @@ func ProveGroth16(dataDir string, witnessPath string) Proof {
 	start := time.Now()
 	os.Setenv("CONSTRAINTS_JSON", dataDir+"/"+constraintsJsonFile)
 	os.Setenv("GROTH16", "1")
+	// Enable detailed logging for ICICLE metrics
+	os.Setenv("ICICLE_DETAILED_METRICS", "1")
+	os.Setenv("ICICLE_STEP_PROFILE", "1")
+	os.Setenv("GNARK_DEBUG_PROFILE", "1")
+	
 	fmt.Printf("SETTING ENVIRONMENT VARIABLES TOOK %s\n", time.Since(start))
 
 	// Read the R1CS.
@@ -120,6 +126,11 @@ func ProveGroth16(dataDir string, witnessPath string) Proof {
 		defer r1csFile.Close()
 		globalR1csInitialized = true
 		fmt.Printf("Reading R1CS took %s\n", time.Since(start))
+		
+		// Log R1CS system metrics
+		fmt.Printf("======== R1CS METRICS ========\n")
+		fmt.Printf("Number of constraints: %d\n", globalR1cs.GetNbConstraints())
+		fmt.Printf("==============================\n")
 	}
 	globalMutex.Unlock()
 
@@ -136,6 +147,11 @@ func ProveGroth16(dataDir string, witnessPath string) Proof {
 		defer pkFile.Close()
 		globalPkInitialized = true
 		fmt.Printf("Reading proving key took %s\n", time.Since(start))
+		
+		// Log proving key metrics
+		fmt.Printf("======== PROVING KEY METRICS ========\n")
+		fmt.Printf("Proving key loaded successfully\n")
+		fmt.Printf("====================================\n")
 	}
 	globalMutex.Unlock()
 
@@ -164,7 +180,16 @@ func ProveGroth16(dataDir string, witnessPath string) Proof {
 		panic(err)
 	}
 	fmt.Printf("Generating witness took %s\n", time.Since(start))
+	
+	// Log witness metrics
+	fmt.Printf("======== WITNESS METRICS ========\n")
+	fmt.Printf("Witness generated successfully\n")
+	fmt.Printf("================================\n")
 
+	// Configure logging for detailed metrics
+	log := logger.Logger().With().Str("curve", "bn254").Int("nbConstraints", globalR1cs.GetNbConstraints()).Str("backend", "groth16").Logger()
+	log.Info().Msg("Starting proof generation with detailed metrics")
+	
 	start = time.Now()
 	// Generate the proof.
 	proof, err := groth16.Prove(globalR1cs, globalPk, witness, backend.WithIcicleAcceleration())

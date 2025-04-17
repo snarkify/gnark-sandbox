@@ -36,6 +36,9 @@ COPY . /gnark-sandbox
 # Explicitly fix go.mod versions
 WORKDIR /gnark-sandbox/gnark-ffi/go
 
+# Use the local copy of gnark - with correct relative path
+#RUN go mod edit -replace github.com/consensys/gnark=../../local-deps/github.com/consensys/gnark
+
 RUN go mod tidy
 
 # Add caching for the icicle-gnark build
@@ -68,8 +71,8 @@ WORKDIR /gnark-sandbox
 RUN \
   --mount=type=cache,target=/root/.cargo/registry \
   --mount=type=cache,target=/gnark-sandbox/target \
-  cargo build --package gnark-cli --release; \ 
-  cp ./target/release/gnark-cli /gnark-cli
+  cargo build --package gnark-cli --release && \ 
+  cp ./target/release/gnark-cli /gnark-cli || exit 1
 
 FROM nvidia/cuda:12.2.2-runtime-ubuntu22.04
 
@@ -88,6 +91,12 @@ COPY --from=cuda-base /usr/local/lib/backend/bn254/cuda/libicicle_backend_cuda_f
 COPY --from=cuda-base /usr/local/lib/backend/cuda/libicicle_backend_cuda_device.so /usr/local/lib/backend/
 
 ENV LD_LIBRARY_PATH=/usr/local/lib:/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+
+# Enable detailed logs for ICICLE and Gnark
+ENV RUST_LOG=debug
+ENV ICICLE_DETAILED_METRICS=1
+ENV ICICLE_STEP_PROFILE=1
+ENV GNARK_DEBUG_PROFILE=1
 
 RUN ldconfig
 
