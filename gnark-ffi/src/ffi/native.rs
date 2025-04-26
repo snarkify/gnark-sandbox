@@ -281,6 +281,7 @@ mod tests {
     use p3_field::AbstractField;
     use p3_symmetric::Permutation;
     use sp1_stark::inner_perm;
+    use std::path::Path;
 
     #[test]
     pub fn test_babybear_poseidon2() {
@@ -289,5 +290,30 @@ mod tests {
         let result = perm.permute(zeros);
         println!("{:?}", result);
         super::test_babybear_poseidon2();
+    }
+
+    #[test]
+    pub fn test_groth16_prove() {
+        // Similar to the docker command:
+        // docker run -v $(pwd)/test-data:/test-data gnark-sandbox prove --system groth16
+        // /test-data/groth16_circuit /test-data/groth16_circuit/groth16_witness.json /test-data/groth16_output/proof.bin
+
+        let test_data_dir = env!("CARGO_MANIFEST_DIR");
+        let test_data_dir = Path::new(test_data_dir).join("..").join("test-data");
+
+        let circuit_dir = test_data_dir.join("groth16_circuit");
+        let witness_path = test_data_dir.join("groth16_witness.json");
+
+        // Prove using the native FFI
+        let proof = super::prove_groth16_bn254(
+            test_data_dir.to_str().unwrap(),
+            witness_path.to_str().unwrap(),
+        );
+
+        // Verify the proof was generated successfully
+        assert!(!proof.raw_proof.is_empty());
+        assert!(!proof.encoded_proof.is_empty());
+
+        println!("Successfully generated Groth16 proof using native FFI");
     }
 }

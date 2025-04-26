@@ -9,10 +9,17 @@ import (
 	"time"
 
 	"github.com/consensys/gnark-crypto/ecc"
+	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
 	"github.com/consensys/gnark/backend/groth16"
+	groth16bn254 "github.com/consensys/gnark/backend/groth16/bn254"
 	"github.com/consensys/gnark/backend/plonk"
+	gnarkwitness "github.com/consensys/gnark/backend/witness"
 	"github.com/consensys/gnark/constraint"
+	bn254cs "github.com/consensys/gnark/constraint/bn254"
 	"github.com/consensys/gnark/frontend"
+	
+	gnark2circomWitness "github.com/succinctlabs/sp1-recursion-gnark/sp1/gnark2circom/witness"
+	gnark2circomZkey "github.com/succinctlabs/sp1-recursion-gnark/sp1/gnark2circom/zkey"
 )
 
 var globalMutex sync.RWMutex
@@ -20,6 +27,8 @@ var globalR1cs constraint.ConstraintSystem = groth16.NewCS(ecc.BN254)
 var globalR1csInitialized = false
 var globalPk groth16.ProvingKey = groth16.NewProvingKey(ecc.BN254)
 var globalPkInitialized = false
+var globalVk groth16.VerifyingKey = groth16.NewVerifyingKey(ecc.BN254)
+var globalVkInitialized = false
 
 func ProvePlonk(dataDir string, witnessPath string) Proof {
 	// Sanity check the required arguments have been provided.
@@ -137,6 +146,21 @@ func ProveGroth16(dataDir string, witnessPath string) Proof {
 		fmt.Printf("Reading proving key took %s\n", time.Since(start))
 	}
 	globalMutex.Unlock()
+	
+	// Read the verifying key.
+	globalMutex.Lock()
+	if !globalVkInitialized {
+		start = time.Now()
+		vkFile, err := os.Open(dataDir + "/" + groth16VkPath)
+		if err != nil {
+			panic(err)
+		}
+		globalVk.ReadFrom(vkFile)
+		defer vkFile.Close()
+		globalVkInitialized = true
+		fmt.Printf("Reading verifying key took %s\n", time.Since(start))
+	}
+	globalMutex.Unlock()
 
 	start = time.Now()
 	// Read the file.
@@ -165,8 +189,64 @@ func ProveGroth16(dataDir string, witnessPath string) Proof {
 	fmt.Printf("Generating witness took %s\n", time.Since(start))
 
 	start = time.Now()
-	// Generate the proof.
-	proof, err := groth16.Prove(globalR1cs, globalPk, witness)
+	// Print debug info
+	fmt.Println("=== ProveGroth16 is calling groth16.Prove with verification key initialized:", globalVkInitialized)
+	
+	// Set our intercept callback function that will be called from the Prove function
+	groth16bn254.ProveInterceptCallback = func(r1cs *bn254cs.R1CS, pk *groth16bn254.ProvingKey, fullWitness interface{}, vk *groth16bn254.VerifyingKey, h []fr.Element) {
+		fmt.Println("Converting witness to circom wtns format")
+		
+		// Access the witness as gnarkwitness.Witness to get Vector() method
+		w, ok := fullWitness.(gnarkwitness.Witness)
+		if !ok {
+			fmt.Printf("Error: fullWitness is not a witness.Witness type, it's %T\n", fullWitness)
+			return
+		}
+		
+		// Create a new WtnsConverter from the witness
+		wtnsConverter, err := gnark2circomWitness.NewWtnsConverterFromGnark(w, r1cs)
+		if err != nil {
+			fmt.Printf("Error creating witness converter: %v\n", err)
+			return
+		}
+		
+		// Define the path where to save the wtns file
+		wtnsPath := dataDir + "/witness.wtns"
+		
+		// Serialize to file
+		err = wtnsConverter.SerializeToFile(wtnsPath)
+		if err != nil {
+			fmt.Printf("Error writing witness file: %v\n", err)
+			return
+		}
+		
+		fmt.Printf("Witness successfully saved to %s\n", wtnsPath)
+		
+		// Next step: create and serialize zkey file
+		fmt.Println("Converting to zkey format")
+		
+		// Create a ZKey from the R1CS, proving key, verifying key, witness, and h elements
+		zkeyConverter, err := gnark2circomZkey.NewZKeyFromGnark(r1cs, pk, vk, w, h)
+		if err != nil {
+			fmt.Printf("Error creating zkey converter: %v\n", err)
+			return
+		}
+		
+		// Define the path where to save the zkey file
+		zkeyPath := dataDir + "/groth16_circuit.zkey"
+		
+		// Serialize to file
+		err = zkeyConverter.SerializeToFile(zkeyPath)
+		if err != nil {
+			fmt.Printf("Error writing zkey file: %v\n", err)
+			return
+		}
+		
+		fmt.Printf("Zkey successfully saved to %s\n", zkeyPath)
+	}
+	
+	// Generate the proof with verification key
+	proof, err := groth16.Prove(globalR1cs, globalPk, witness, globalVk)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		panic(err)
