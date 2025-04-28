@@ -19,10 +19,11 @@ RUN rustup show
 # Copy repo
 COPY . /gnark-sandbox
 
-# Build the gnark-ffi CLI
+# Build the gnark-ffi CLI and run tests with cache
 RUN \
   --mount=type=cache,target=/usr/local/cargo/registry \
   --mount=type=cache,target=/gnark-sandbox/target \
+  cargo test --release && \
   cargo build --package gnark-cli --release && cp ./target/release/gnark-cli /gnark-cli
 
 FROM rustlang/rust:nightly-bullseye-slim
