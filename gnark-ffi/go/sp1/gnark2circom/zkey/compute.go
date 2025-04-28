@@ -12,32 +12,26 @@ import (
 // This function converts Gnark's H elements ([]fr.Element) to SnarkJS's PointsH ([]bn254.G1Affine)
 func ReconstructPointsH(domain fft.Domain, h []fr.Element) ([]bn254.G1Affine, error) {
 	// Allocate the result array with domain size
-	domainSize := domain.Cardinality
-	pointsH := make([]bn254.G1Affine, domainSize)
-	
-	// Get the G1 generator point
-	g1Gen, _, _, _ := bn254.Generators()
-	
-	// For each H element in the domain, convert to a G1 point using scalar multiplication
-	for i := uint64(0); i < domainSize; i++ {
-		// If we have fewer H elements than the domain size, pad with zeros
-		if i < uint64(len(h)) {
-			// Convert the field element to scalar for G1 point multiplication
-			var scalar big.Int
-			h[i].BigInt(&scalar)
-			
-			// Compute g1Gen * hElement (scalar multiplication)
-			var p bn254.G1Jac
-			p.ScalarMultiplication(&g1Gen, &scalar)
-			
-			// Convert to affine coordinates and store in result
-			pointsH[i].FromJacobian(&p)
-		} else {
-			// For any indices beyond the provided H elements, use the point at infinity
-			pointsH[i].X.SetZero()
-			pointsH[i].Y.SetZero()
+	pointsH := make([]bn254.G1Affine, domain.Cardinality)
+
+	// Get the generator point for G1
+	g1GenAffine := bn254.G1Affine{}
+	g1GenJac, _, _, _ := bn254.Generators()
+	g1GenAffine.FromJacobian(&g1GenJac)
+
+	// For each H element, convert to a G1 point using scalar multiplication
+	for i, hElement := range h {
+		if i >= len(pointsH) {
+			break
 		}
+
+		// Convert field element to standard (non-Montgomery) representation
+		bigInt := new(big.Int)
+		hElement.BigInt(bigInt) // This handles Montgomery conversion correctly
+
+		// Compute g1Gen * hElement (scalar multiplication)
+		pointsH[i].ScalarMultiplication(&g1GenAffine, bigInt)
 	}
-	
+
 	return pointsH, nil
 }
