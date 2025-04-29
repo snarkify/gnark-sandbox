@@ -199,5 +199,25 @@ func ProveGroth16(dataDir string, witnessPath string) Proof {
 	}
 	fmt.Printf("Generating proof took %s\n", time.Since(start))
 
+	start = time.Now()
+	log.Info().Msg("Starting SECOND proof generation with detailed metrics")
+	// Generate the proof.
+	_, err = groth16.Prove(globalR1cs, globalPk, witness, backend.WithIcicleAcceleration())
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		panic(err)
+	}
+	fmt.Printf("Generating proof took %s\n", time.Since(start))
+
+	start = time.Now()
+	log.Info().Msg("Starting THIRD proof generation with detailed metrics")
+	// Generate the proof.
+	_, err = groth16.Prove(globalR1cs, globalPk, witness, backend.WithIcicleAcceleration())
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		panic(err)
+	}
+	fmt.Printf("Generating proof took %s\n", time.Since(start))
+
 	return NewSP1Groth16Proof(&proof, witnessInput)
 }

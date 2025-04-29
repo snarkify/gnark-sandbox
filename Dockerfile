@@ -68,10 +68,12 @@ RUN --mount=type=cache,target=/root/.cache/icicle-gnark \
 
 WORKDIR /gnark-sandbox
 
+# Cache SP1 Git repository specifically
 RUN \
   --mount=type=cache,target=/root/.cargo/registry \
+  --mount=type=cache,target=/root/.cargo/git \
   --mount=type=cache,target=/gnark-sandbox/target \
-  cargo build --package gnark-cli --release && \ 
+  cargo build --package gnark-cli --release && \
   cp ./target/release/gnark-cli /gnark-cli || exit 1
 
 FROM nvidia/cuda:12.2.2-runtime-ubuntu22.04
