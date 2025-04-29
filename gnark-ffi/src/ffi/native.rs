@@ -299,7 +299,7 @@ mod tests {
         // /test-data/groth16_circuit /test-data/groth16_circuit/groth16_witness.json /test-data/groth16_output/proof.bin
 
         let test_data_dir = env!("CARGO_MANIFEST_DIR");
-        let test_data_dir = Path::new(test_data_dir).join("..").join("test-data");
+        let test_data_dir = Path::new(test_data_dir).join("test-data");
 
         let circuit_dir = test_data_dir.join("groth16_circuit");
         let witness_path = test_data_dir.join("groth16_witness.json");

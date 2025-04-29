@@ -286,6 +286,8 @@ func TestPoseidonBabyBear2() *C.char {
 		return C.CString(err.Error())
 	}
 
+	vk := groth16.NewVerifyingKey(ecc.BN254)
+
 	// Generate witness.
 	witness, err := frontend.NewWitness(&assignment, ecc.BN254.ScalarField())
 	if err != nil {
@@ -295,7 +297,7 @@ func TestPoseidonBabyBear2() *C.char {
 	// Generate the proof.
 	// Use nil for VerifyingKey as it's not needed for test
 	fmt.Println("=== TestGroth16Bn254 is calling groth16.Prove with nil verification key")
-	_, err = groth16.Prove(r1cs, pk, witness, nil)
+	_, err = groth16.Prove(r1cs, pk, vk, witness)
 	if err != nil {
 		return C.CString(err.Error())
 	}

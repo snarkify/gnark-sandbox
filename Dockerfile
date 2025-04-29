@@ -26,7 +26,7 @@ RUN \
   cargo test --release && \
   cargo build --package gnark-cli --release && cp ./target/release/gnark-cli /gnark-cli
 
-FROM rustlang/rust:nightly-bullseye-slim
-COPY --from=rust-builder /gnark-cli /gnark-cli
-
-ENTRYPOINT ["/gnark-cli"]
+#FROM rustlang/rust:nightly-bullseye-slim
+#COPY --from=rust-builder /gnark-cli /gnark-cli
+#
+#ENTRYPOINT ["/gnark-cli"]

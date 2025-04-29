@@ -5,6 +5,7 @@ go 1.22.0
 require (
 	github.com/consensys/gnark v0.10.1-0.20240504023521-d9bfacd7cb60
 	github.com/consensys/gnark-crypto v0.17.1-0.20250326164229-5fd6610ac2a1
+	github.com/snarkify/gnark2circom v0.0.0-00010101000000-000000000000
 )
 
 require github.com/ingonyama-zk/icicle-gnark/v3 v3.2.2 // indirect
@@ -32,4 +33,5 @@ require (
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
 
-replace github.com/consensys/gnark => /home/q99/projects/github.com/snarkify/gnark-sandbox/local-deps/github.com/consensys/gnark
+replace github.com/consensys/gnark => ../../local-deps/gnark
+replace github.com/snarkify/gnark2circom => ../../local-deps/gnark2circom

@@ -3,14 +3,10 @@ package witness
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
 	"math/big"
 	"os"
-	"reflect"
 
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
-	"github.com/consensys/gnark/backend/witness"
-	"github.com/consensys/gnark/constraint"
 )
 
 // WtnsConverter converts gnark witness format to circom witness format
@@ -27,54 +23,6 @@ type WtnsConverter struct {
 	NumWitness uint32
 }
 
-// Creates a new WtnsConverter from a gnark witness
-func NewWtnsConverterFromGnark(w witness.Witness, r1cs constraint.ConstraintSystem) (*WtnsConverter, error) {
-	// Get witness information from gnark
-	wValue := reflect.ValueOf(w).Elem()
-	nbPublicField := wValue.FieldByName("nbPublic")
-
-	if !nbPublicField.IsValid() {
-		return nil, fmt.Errorf("could not access nbPublic field in witness")
-	}
-
-	nbPublic := nbPublicField.Uint()
-
-	// Extract the raw witness values and convert to fr.Element slice
-	// This depends on the exact structure of the witness, which might vary by curve
-	// For BN254, we'll need to extract the vector as fr.Element
-	rawWitness, err := extractWitnessValues(w)
-	if err != nil {
-		return nil, fmt.Errorf("error extracting witness values: %v", err)
-	}
-
-	// Create the converter
-	converter := &WtnsConverter{
-		N8:         32, // BN254 field element size in bytes
-		Q:          fr.Modulus(),
-		Witness:    rawWitness,
-		NumPublic:  uint32(nbPublic),
-		NumWitness: uint32(len(rawWitness) + 1), // +1 for the "one" wire
-	}
-
-	return converter, nil
-}
-
-// Helper to extract witness values as []*big.Int slice
-func extractWitnessValues(w witness.Witness) ([]*big.Int, error) {
-	// pull the raw vector via the public API
-	vecIfc := w.Vector()
-	elems, ok := vecIfc.(fr.Vector)
-	if !ok {
-		return nil, fmt.Errorf("could not assert witness vector type: %T", vecIfc)
-	}
-	// convert each fr.Element → *big.Int
-	out := make([]*big.Int, len(elems))
-	for i, e := range elems {
-		out[i] = new(big.Int)
-		e.BigInt(out[i])
-	}
-	return out, nil
-}
 
 // Creates a new WtnsConverter directly from witness values
 func NewWtnsConverter(witness []*big.Int, numPublic uint32) *WtnsConverter {

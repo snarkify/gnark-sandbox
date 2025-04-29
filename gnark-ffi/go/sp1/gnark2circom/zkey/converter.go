@@ -8,20 +8,18 @@ import (
 
 	"github.com/consensys/gnark-crypto/ecc/bn254"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
-	"github.com/consensys/gnark-crypto/ecc/bn254/fr/fft"
 	"github.com/consensys/gnark/backend/groth16"
-	"github.com/consensys/gnark/backend/witness"
 	"github.com/consensys/gnark/constraint"
 	bn254CS "github.com/consensys/gnark/constraint/bn254"
 )
 
-// Creates a new ZKey from gnark R1CS, proving key, verifying key, witness and h elements
-func NewZKeyFromGnark(r1cs constraint.ConstraintSystem, pk groth16.ProvingKey, vk groth16.VerifyingKey, witness witness.Witness, h []fr.Element) (*ZKey, error) {
+// Creates a new ZKey from gnark R1CS, proving key, verifying key, witness vector and h elements
+func NewZKeyFromGnark(r1cs constraint.ConstraintSystem, pk groth16.ProvingKey, vk groth16.VerifyingKey, witnessVector fr.Vector, h []fr.Element) (*ZKey, error) {
 	zkey := &ZKey{
 		Version:          1,
 		NumberOfSections: 9, // Support for 9 sections (sections 1-9)
-		ProtocolID:       1,  // Groth16
-		HElements:        h,  // Store the H elements for later use
+		ProtocolID:       1, // Groth16
+		HElements:        h, // Store the H elements for later use
 	}
 
 	// Set the magic bytes "zkey"
@@ -33,11 +31,13 @@ func NewZKeyFromGnark(r1cs constraint.ConstraintSystem, pk groth16.ProvingKey, v
 
 	// Get modulus values for BN254
 	// For BN254 base field (𝔽ₚ) - not directly exposed by library
+	// IMPORTANT: The string representation must exactly match what snarkjs expects for BN254/BN128
 	zkey.Q = new(big.Int)
 	zkey.Q.SetString("21888242871839275222246405745257275088696311157297823662689037894645226208583", 10)
 
-	// For scalar field (𝔽ᵣ) - can get programmatically
-	zkey.R = fr.Modulus()
+	// For scalar field (𝔽ᵣ) - must use the exact string representation expected by snarkjs
+	zkey.R = new(big.Int)
+	zkey.R.SetString("21888242871839275222246405745257275088548364400416034343698204186575808495617", 10)
 
 	// Get R1CS information
 	internalVarCount := r1cs.GetNbInternalVariables()
@@ -123,9 +123,8 @@ func NewZKeyFromGnark(r1cs constraint.ConstraintSystem, pk groth16.ProvingKey, v
 
 	// For Gamma2, which doesn't exist in gnark directly, use the G2 generator point
 	// SnarkJS expects this to be the generator point for the BN254 curve
-	_, _, _, g2Jac := bn254.Generators() // g2Jac is already G2Jac
-	g2Aff := bn254.G2Affine{}
-	g2Aff.FromJacobian(&g2Jac)
+	// Generators returns (g1Jac G1Jac, g2Jac G2Jac, g1Aff G1Affine, g2Aff G2Affine)
+	_, _, _, g2Aff := bn254.Generators() // g2Aff is G2Affine
 	zkey.VkGamma2 = g2Aff
 
 	// Get the IC points from the verifying key (K field)
@@ -137,7 +136,7 @@ func NewZKeyFromGnark(r1cs constraint.ConstraintSystem, pk groth16.ProvingKey, v
 		return nil, fmt.Errorf("K field not found in verifying key")
 	}
 
-	kField := g1Field.FieldByName("K")
+	kField := g1VkField.FieldByName("K")
 
 	if !kField.IsValid() {
 		return nil, fmt.Errorf("K field not found in vk.G1")
@@ -175,47 +174,58 @@ func NewZKeyFromGnark(r1cs constraint.ConstraintSystem, pk groth16.ProvingKey, v
 	}
 	zkey.PointsC = cField.Interface().([]bn254.G1Affine)
 
-
 	// Section 9: Points H
 
 	fmt.Printf("Start Points H")
-	// Reconstruct Points H (Section 9)
-	domain := fft.NewDomain(uint64(nbConstraints))
-	pointsH, err := ReconstructPointsH(*domain, h)
-	if err != nil {
-		return nil, fmt.Errorf("failed to reconstruct PointsH: %w", err)
+	zField := g1Field.FieldByName("Z")
+	if !zField.IsValid() {
+		return nil, fmt.Errorf("Alpha field not found in G1")
 	}
-	zkey.PointsH = pointsH
+	zkey.PointsH = zField.Interface().([]bn254.G1Affine)
 
 	fmt.Printf("Start Coeffs")
 	// Extract coefficients from R1CS (Section 4)
-	// This is a placeholder - in a complete implementation, we would
-	// access and process the actual constraint system
-	coeffs, err := extractCoefficientsFromR1CS(r1cs)
+	// Process and structure them according to Rust's expected format
+	coeffData, err := extractCoefficientsFromR1CS(r1cs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract coefficients: %w", err)
 	}
-	zkey.Coeffs = coeffs
+	// Convert structured data to flat array format for backward compatibility
+	zkey.Coeffs = coeffData.ToEntries()
+
+	// Also populate the separate arrays that we'll use for serialization
+	// This matches what the Rust ZKeyCache expects
+	zkey.SValues = coeffData.SValues
+	zkey.CValues = coeffData.CValues
+	zkey.MValues = coeffData.MValues
+	zkey.Values = coeffData.Values
+
+	// Debug the coefficients section to ensure it matches what Rust expects
+	fmt.Println("==== Validating coefficient section format for Rust compatibility ====")
+	zkey.DebugCoeffsSection()
+	fmt.Println("==== End of validation ====")
 
 	return zkey, nil
 }
 
 // Extract coefficients from R1CS constraint system
-func extractCoefficientsFromR1CS(cs constraint.ConstraintSystem) ([]CoefficientEntry, error) {
+// Returns structured coefficient data that matches Rust's expectation
+func extractCoefficientsFromR1CS(cs constraint.ConstraintSystem) (CoefficientsData, error) {
 	fmt.Printf("Extracting coefficients from R1CS\n")
 
-	var coeffEntries []CoefficientEntry
+	// Initialize the structured coefficient data
+	coeffData := CoefficientsData{}
 
 	// Convert cs to R1CS interface to access GetR1CIterator
 	r1cs, ok := cs.(constraint.R1CS)
 	if !ok {
-		return nil, fmt.Errorf("constraint system is not an R1CS")
+		return CoefficientsData{}, fmt.Errorf("constraint system is not an R1CS")
 	}
 
 	// Get underlying implementation to access coefficient table
 	bn254CS, ok := cs.(*bn254CS.SparseR1CS)
 	if !ok {
-		return nil, fmt.Errorf("expected *cs.system type, got %T", cs)
+		return CoefficientsData{}, fmt.Errorf("expected *cs.system type, got %T", cs)
 	}
 
 	// Get iterator over all R1CS constraints
@@ -229,21 +239,48 @@ func extractCoefficientsFromR1CS(cs constraint.ConstraintSystem) ([]CoefficientE
 		}
 
 		// Process L terms (Matrix = 0 for A)
-		processTerms(constraint.L, 0, uint32(i), bn254CS, &coeffEntries)
+		if err := processTermsStructured(constraint.L, 0, uint32(i), bn254CS, &coeffData); err != nil {
+			return CoefficientsData{}, fmt.Errorf("error processing L terms for constraint %d: %w", i, err)
+		}
 
 		// Process R terms (Matrix = 1 for B)
-		processTerms(constraint.R, 1, uint32(i), bn254CS, &coeffEntries)
+		if err := processTermsStructured(constraint.R, 1, uint32(i), bn254CS, &coeffData); err != nil {
+			return CoefficientsData{}, fmt.Errorf("error processing R terms for constraint %d: %w", i, err)
+		}
 
 		// Note: In snarkjs format, we only include A and B matrices (0 and 1)
 		// We don't process O terms (C matrix) as they're handled differently
 	}
 
-	fmt.Printf("Extracted %d coefficient entries\n", len(coeffEntries))
-	return coeffEntries, nil
+	// Verify all arrays have the same length
+	numCoeffs := len(coeffData.SValues)
+	if numCoeffs == 0 {
+		return CoefficientsData{}, fmt.Errorf("no coefficients extracted from R1CS")
+	}
+
+	if len(coeffData.CValues) != numCoeffs || len(coeffData.MValues) != numCoeffs || len(coeffData.Values) != numCoeffs {
+		return CoefficientsData{}, fmt.Errorf("coefficient arrays have inconsistent lengths: s_values=%d, c_values=%d, m_values=%d, values=%d",
+			numCoeffs, len(coeffData.CValues), len(coeffData.MValues), len(coeffData.Values))
+	}
+
+	fmt.Printf("Extracted %d coefficient entries\n", numCoeffs)
+	fmt.Printf("Organized into s_values(%d), c_values(%d), m_values(%d), values(%d)\n",
+		len(coeffData.SValues), len(coeffData.CValues), len(coeffData.MValues), len(coeffData.Values))
+
+	// Validate matrix values (should be 0 for A or 1 for B)
+	for i, m := range coeffData.MValues {
+		if m > 1 {
+			return CoefficientsData{}, fmt.Errorf("coefficient %d has invalid matrix value %d, must be 0 or 1", i, m)
+		}
+	}
+
+	return coeffData, nil
 }
 
+
 // Helper function to process terms in a constraint
-func processTerms(terms constraint.LinearExpression, matrix uint32, constraintIdx uint32, r1cs *bn254CS.SparseR1CS, entries *[]CoefficientEntry) {
+// Modifies entries in-place, returns error if any issues occur
+func processTerms(terms constraint.LinearExpression, matrix uint32, constraintIdx uint32, r1cs *bn254CS.SparseR1CS, entries *[]CoefficientEntry) error {
 	for _, term := range terms {
 		// Skip terms where coefficient is zero
 		if term.CoeffID() == 0 { // CoeffIdZero is 0
@@ -253,8 +290,7 @@ func processTerms(terms constraint.LinearExpression, matrix uint32, constraintId
 		// Get the coefficient directly from the coefficient table
 		coeffID := term.CoeffID()
 		if int(coeffID) >= len(r1cs.Coefficients) {
-			fmt.Printf("Warning: coefficient ID %d out of range (max %d)\n", coeffID, len(r1cs.Coefficients))
-			continue
+			return fmt.Errorf("coefficient ID %d out of range (max %d)", coeffID, len(r1cs.Coefficients))
 		}
 
 		// Get the coefficient value from the table
@@ -275,4 +311,39 @@ func processTerms(terms constraint.LinearExpression, matrix uint32, constraintId
 
 		*entries = append(*entries, entry)
 	}
+
+	return nil
+}
+
+// Helper function to process terms into structured coefficient data
+// Modifies coeffData in-place, returns error if any issues occur
+func processTermsStructured(terms constraint.LinearExpression, matrix uint32, constraintIdx uint32, r1cs *bn254CS.SparseR1CS, coeffData *CoefficientsData) error {
+	for _, term := range terms {
+		// Skip terms where coefficient is zero
+		if term.CoeffID() == 0 { // CoeffIdZero is 0
+			continue
+		}
+
+		// Get the coefficient directly from the coefficient table
+		coeffID := term.CoeffID()
+		if int(coeffID) >= len(r1cs.Coefficients) {
+			return fmt.Errorf("coefficient ID %d out of range (max %d)", coeffID, len(r1cs.Coefficients))
+		}
+
+		// Get the coefficient value from the table
+		frVal := r1cs.Coefficients[coeffID]
+
+		// Skip zero coefficients
+		if frVal.IsZero() {
+			continue
+		}
+
+		// Append values to the proper arrays
+		coeffData.SValues = append(coeffData.SValues, uint32(term.WireID()))
+		coeffData.CValues = append(coeffData.CValues, constraintIdx)
+		coeffData.MValues = append(coeffData.MValues, matrix)
+		coeffData.Values = append(coeffData.Values, frVal)
+	}
+
+	return nil
 }

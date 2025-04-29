@@ -285,7 +285,7 @@ func BuildGroth16(dataDir string) {
 	if err != nil {
 		panic(err)
 	}
-	proof, err := groth16.Prove(r1cs, pk, witness, vk)
+	proof, err := groth16.Prove(r1cs, pk, vk, witness)
 	if err != nil {
 		panic(err)
 	}
