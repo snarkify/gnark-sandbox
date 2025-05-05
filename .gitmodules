@@ -1,0 +1,3 @@
+[submodule "local-deps/gnark"]
+	path = local-deps/gnark
+	url = git@github.com:Consensys/gnark.git

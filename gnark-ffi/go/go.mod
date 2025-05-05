@@ -8,7 +8,7 @@ require (
 	github.com/ingonyama-zk/icicle-gnark/v3 v3.2.2
 )
 
-replace github.com/consensys/gnark => ../../local-deps/github.com/consensys/gnark
+replace github.com/consensys/gnark => ../../local-deps/gnark
 
 require (
 	github.com/bits-and-blooms/bitset v1.20.0 // indirect
