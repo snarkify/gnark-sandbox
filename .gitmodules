@@ -1,3 +1,6 @@
 [submodule "local-deps/gnark"]
 	path = local-deps/gnark
 	url = git@github.com:Consensys/gnark.git
+[submodule "local-deps/icicle-gnark"]
+	path = local-deps/icicle-gnark
+	url = https://github.com/ingonyama-zk/icicle-gnark.git

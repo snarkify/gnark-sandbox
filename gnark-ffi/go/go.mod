@@ -9,6 +9,7 @@ require (
 )
 
 replace github.com/consensys/gnark => ../../local-deps/gnark
+replace github.com/ingonyama-zk/icicle-gnark/v3 => ../../local-deps/icicle-gnark
 
 require (
 	github.com/bits-and-blooms/bitset v1.20.0 // indirect
