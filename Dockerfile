@@ -36,8 +36,9 @@ COPY . /gnark-sandbox
 # Explicitly fix go.mod versions
 WORKDIR /gnark-sandbox/gnark-ffi/go
 
-# Use the local copy of gnark - with correct relative path
+# Use the local copies of dependencies
 #RUN go mod edit -replace github.com/consensys/gnark=../../local-deps/github.com/consensys/gnark
+RUN go mod edit -replace github.com/ingonyama-zk/icicle-gnark/v3=../../local-deps/icicle-gnark
 
 RUN go mod tidy
 
@@ -49,14 +50,13 @@ RUN go mod tidy
 #    /bin/bash build.sh -curve=bn254;
 
 RUN --mount=type=cache,target=/root/.cache/icicle-gnark \
-    go get github.com/ingonyama-zk/icicle-gnark/v3; \
-    ICICLE_DIR=$(go env GOMODCACHE)/github.com/ingonyama-zk/icicle-gnark/v3@v3.2.2; \
+    mkdir -p /usr/local/lib /usr/local/lib/backend/bn254/cuda /usr/local/lib/backend/cuda; \
     if [ -d "/root/.cache/icicle-gnark/libs" ]; then \
         echo "Using cached icicle-gnark libraries"; \
-        mkdir -p /usr/local/lib /usr/local/lib/backend/bn254/cuda /usr/local/lib/backend/cuda; \
         cp -r /root/.cache/icicle-gnark/libs/* /usr/local/lib/; \
     else \
-        cd $ICICLE_DIR/wrappers/golang; \
+        echo "Building icicle-gnark from local dependencies"; \
+        cd /gnark-sandbox/local-deps/icicle-gnark/wrappers/golang; \
         /bin/bash build.sh -curve=bn254; \
         mkdir -p /root/.cache/icicle-gnark/libs; \
         cp -r /usr/local/lib/libicicle_* /root/.cache/icicle-gnark/libs/; \
