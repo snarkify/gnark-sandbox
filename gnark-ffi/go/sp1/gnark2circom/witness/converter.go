@@ -103,12 +103,6 @@ func (wc *WtnsConverter) SerializeToCircomWitness() []byte {
 	}
 	fmt.Printf("Total zero values in witness: %d (may include padding)\n", zeroCount)
 
-	// Write the "one" wire (always first)
-	oneBytes := make([]byte, wc.N8)
-	// Set the first byte to 1, rest are 0 (little-endian format)
-	oneBytes[0] = 1
-	buffer.Write(oneBytes)
-
 	// Write all witness values
 	for i := 0; i < len(wc.Witness); i++ {
 		elemBytes := make([]byte, wc.N8)

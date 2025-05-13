@@ -194,6 +194,47 @@ func ProveGroth16(dataDir string, witnessPath string) Proof {
 
 	// Set our intercept callback function that will be called from the Prove function
 	groth16bn254.ProveInterceptCallback = func(r1cs *bn254cs.R1CS, pk *groth16bn254.ProvingKey, fullWitness []fr.Element, vk *groth16bn254.VerifyingKey, h []fr.Element) {
+		fmt.Println("=== Field Arrays Size Analysis ===")
+
+		// Print size of full witness
+		fmt.Printf("fullWitness size: %d\n", len(fullWitness))
+
+		// Points A size
+		fmt.Printf("points_a size: %d\n", len(pk.G1.A))
+		fmt.Printf("points_a infinity points: %d\n", pk.NbInfinityA)
+
+		// Points B1 size
+		fmt.Printf("points_b1 size: %d\n", len(pk.G1.B))
+
+		// Count infinity points in B1
+		actualInfinityCountB := 0
+		for _, isInfinity := range pk.InfinityB {
+			if isInfinity {
+				actualInfinityCountB++
+			}
+		}
+		fmt.Printf("points_b1 infinity points: %d\n", actualInfinityCountB)
+
+		// Points C size
+		fmt.Printf("points_c size: %d\n", len(pk.G1.K))
+		fmt.Printf("points_c used range: d_scalars[%d:] (starting after public inputs)\n", r1cs.GetNbPublicVariables()+1)
+
+		// Points B2 size
+		fmt.Printf("points_b size: %d\n", len(pk.G2.B))
+
+		// Points H size
+		fmt.Printf("points_h size: %d\n", len(pk.G1.Z))
+		fmt.Printf("h elements size: %d\n", len(h))
+
+		// NumberOfSections, NumVars, NumPublic
+		internalVarCount := r1cs.GetNbInternalVariables()
+		secretVarCount := r1cs.GetNbSecretVariables()
+		publicVarCount := r1cs.GetNbPublicVariables()
+
+		numVars := uint32(internalVarCount + secretVarCount + publicVarCount)
+		fmt.Printf("numVars: %d\n", numVars)
+		fmt.Printf("numPublic: %d\n", r1cs.GetNbPublicVariables())
+
 		fmt.Println("Converting to zkey format")
 
 		// Create a ZKey from the R1CS, proving key, verifying key, and h elements
@@ -217,27 +258,48 @@ func ProveGroth16(dataDir string, witnessPath string) Proof {
 		fmt.Printf("Zkey successfully saved to %s\n", zkeyPath)
 		fmt.Println("Converting witness to circom wtns format")
 
-		// Get length of pk.G1.A for padding witness to match
-		pointsALen := len(pk.G1.A)
-		fmt.Printf("Points A length: %d, Full witness length: %d\n", pointsALen, len(fullWitness))
+		// Check if we can access the infinity info
+		infinityA := pk.InfinityA
+		nbInfinityA := pk.NbInfinityA
+
+		fmt.Printf("Found InfinityA information: %d points at infinity out of %d total points\n", nbInfinityA, len(infinityA))
+
+		//// Verify that the number of infinity points matches the actual count
+		//actualInfinityCount := 0
+		//for _, isInfinity := range infinityA {
+		//	if isInfinity {
+		//		actualInfinityCount++
+		//	}
+		//}
+		//fmt.Printf("Actual infinity points count: %d\n", actualInfinityCount)
+
+		//// Filter the witness vector to exclude points corresponding to infinity points
+		//// This mimics what Gnark does internally before MSM
+		//filteredWitness := make([]fr.Element, len(fullWitness)-int(nbInfinityA))
+
+		//// Copy the witness values, skipping those corresponding to infinity points
+		//for i, j := 0, 0; j < len(filteredWitness); i++ {
+		//	if i < len(infinityA) && infinityA[i] {
+		//		// Skip this point since it corresponds to an infinity point
+		//		continue
+		//	}
+
+		//	if j < len(filteredWitness) && i < len(fullWitness) {
+		//		filteredWitness[j] = fullWitness[i]
+		//		j++
+		//	}
+		//}
+
+		//fmt.Printf("Filtered witness length: %d", len(filteredWitness))
 
 		// Convert to []*big.Int with padding to match points_a length
-		witnessLenWithPadding := max(pointsALen, len(fullWitness))
-		bigInts := make([]*big.Int, witnessLenWithPadding)
-		
+		bigInts := make([]*big.Int, len(fullWitness))
+
 		// Copy existing witness values
 		for i := 0; i < len(fullWitness); i++ {
 			bigInts[i] = new(big.Int)
 			fullWitness[i].BigInt(bigInts[i])
 		}
-		
-		// Add padding if needed
-		for i := len(fullWitness); i < pointsALen; i++ {
-			bigInts[i] = new(big.Int)
-			// Initialize padding values to zero
-		}
-		
-		fmt.Printf("Padded witness to length: %d\n", len(bigInts))
 
 		// Get number of public inputs from the R1CS
 		numPublic := uint32(r1cs.GetNbPublicVariables())

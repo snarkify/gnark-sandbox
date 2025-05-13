@@ -155,23 +155,52 @@ func NewZKeyFromGnark(r1cs constraint.ConstraintSystem, pk groth16.ProvingKey, v
 		return nil, fmt.Errorf("A points field not found in G1")
 	}
 	pointsA := aField.Interface().([]bn254.G1Affine)
-	
-	// Check if points_a needs padding to match witness length
-	pointsALen := len(pointsA)
-	witnessLen := len(witnessVector)
-	fmt.Printf("Points A length: %d, Witness vector length: %d\n", pointsALen, witnessLen)
-	
-	if witnessLen > pointsALen {
-		// Extend points_a with zero/infinity points for debugging
-		paddedPointsA := make([]bn254.G1Affine, witnessLen)
+
+	// Access InfinityA field to determine which points are at infinity
+	infinityAField := pkValue.FieldByName("InfinityA")
+	nbInfinityAField := pkValue.FieldByName("NbInfinityA")
+
+	// Print original size information
+	fmt.Printf("Original Points A length: %d, Witness vector length: %d\n", len(pointsA), len(witnessVector))
+
+	// Check if we can access the infinity info
+	if !infinityAField.IsValid() || !nbInfinityAField.IsValid() {
+		return nil, fmt.Errorf("infinityAField or nbInfinityAField is not valid")
+	}
+	infinityA := infinityAField.Interface().([]bool)
+	nbInfinityA := nbInfinityAField.Interface().(uint64)
+
+	fmt.Printf("Found InfinityA information: %d points at infinity out of %d total points\n",
+		nbInfinityA, len(infinityA))
+
+	// Verify that the number of infinity points matches the actual count
+	actualInfinityCount := 0
+	for _, isInfinity := range infinityA {
+		if isInfinity {
+			actualInfinityCount++
+		}
+	}
+	fmt.Printf("Actual infinity points count: %d\n", actualInfinityCount)
+
+	// Create padded Points A to match full witness size
+	if len(pointsA) < len(witnessVector) {
+		fmt.Printf("Padding points_a from %d to %d elements to match witness size\n", 
+			len(pointsA), len(witnessVector))
+		
+		// Create new array with size of witness
+		paddedPointsA := make([]bn254.G1Affine, len(witnessVector))
+		
+		// Copy existing points
 		copy(paddedPointsA, pointsA)
 		
-		// Add zero/infinity points for padding
-		// (the default zero value for G1Affine is the point at infinity)
-		
-		fmt.Printf("Padded points_a from %d to %d elements\n", pointsALen, witnessLen)
+		for i := len(pointsA); i < len(paddedPointsA); i++ {
+			paddedPointsA[i] = bn254.G1Affine{}
+			paddedPointsA[i].SetInfinity()
+		}
+		// Use padded points
 		zkey.PointsA = paddedPointsA
 	} else {
+		// No padding needed
 		zkey.PointsA = pointsA
 	}
 
@@ -180,14 +209,84 @@ func NewZKeyFromGnark(r1cs constraint.ConstraintSystem, pk groth16.ProvingKey, v
 	if !b1Field.IsValid() {
 		return nil, fmt.Errorf("B points field not found in G1")
 	}
-	zkey.PointsB1 = b1Field.Interface().([]bn254.G1Affine)
+
+	pointsB1 := b1Field.Interface().([]bn254.G1Affine)
+	fmt.Printf("Original Points B1 length: %d\n", len(pointsB1))
+
+	// Access and process InfinityB information
+	//infinityBField := pkValue.FieldByName("InfinityB")
+	//nbInfinityBField := pkValue.FieldByName("NbInfinityB")
+
+	// Verify the infinity count
+	//actualInfinityCount := 0
+	//if infinityBField.IsValid() && nbInfinityBField.IsValid() {
+	//	infinityB := infinityBField.Interface().([]bool)
+	//	nbInfinityB := nbInfinityBField.Interface().(uint64)
+
+	//	fmt.Printf("Found InfinityB information: %d points at infinity out of %d total points\n",
+	//		nbInfinityB, len(infinityB))
+
+	//	for _, isInfinity := range infinityB {
+	//		if isInfinity {
+	//			actualInfinityCount++
+	//		}
+	//	}
+	//	fmt.Printf("Actual infinity points count for B: %d\n", actualInfinityCount)
+	//}
+
+	// Create padded Points B1 to match full witness size
+	if len(pointsB1) < len(witnessVector) {
+		fmt.Printf("Padding points_b1 from %d to %d elements to match witness size\n", 
+			len(pointsB1), len(witnessVector))
+		
+		// Create new array with size of witness
+		paddedPointsB1 := make([]bn254.G1Affine, len(witnessVector))
+		
+		// Copy existing points
+		copy(paddedPointsB1, pointsB1)
+
+		for i := len(pointsB1); i < len(paddedPointsB1); i++ {
+			paddedPointsB1[i] = bn254.G1Affine{}
+			paddedPointsB1[i].SetInfinity()
+		}
+		
+		// Use padded points
+		zkey.PointsB1 = paddedPointsB1
+	} else {
+		// No padding needed
+		zkey.PointsB1 = pointsB1
+	}
 
 	// Section 7: Points B2 (G2)
 	b2Field := g2Field.FieldByName("B")
 	if !b2Field.IsValid() {
 		return nil, fmt.Errorf("B points field not found in G2")
 	}
-	zkey.PointsB2 = b2Field.Interface().([]bn254.G2Affine)
+	pointsB2 := b2Field.Interface().([]bn254.G2Affine)
+	fmt.Printf("Original Points B2 length: %d\n", len(pointsB2))
+	
+	// Create padded Points B2 to match full witness size
+	if len(pointsB2) < len(witnessVector) {
+		fmt.Printf("Padding points_b2 from %d to %d elements to match witness size\n", 
+			len(pointsB2), len(witnessVector))
+		
+		// Create new array with size of witness
+		paddedPointsB2 := make([]bn254.G2Affine, len(witnessVector))
+		
+		// Copy existing points
+		copy(paddedPointsB2, pointsB2)
+
+		for i := len(pointsB2); i < len(paddedPointsB2); i++ {
+			paddedPointsB2[i] = bn254.G2Affine{}
+			paddedPointsB2[i].SetInfinity()
+		}
+		
+		// Use padded points
+		zkey.PointsB2 = paddedPointsB2
+	} else {
+		// No padding needed
+		zkey.PointsB2 = pointsB2
+	}
 
 	// Section 8: Points C
 	cField := g1Field.FieldByName("K")
@@ -298,7 +397,6 @@ func extractCoefficientsFromR1CS(cs constraint.ConstraintSystem) (CoefficientsDa
 
 	return coeffData, nil
 }
-
 
 // Helper function to process terms in a constraint
 // Modifies entries in-place, returns error if any issues occur
