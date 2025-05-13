@@ -14,7 +14,7 @@ import (
 )
 
 // Creates a new ZKey from gnark R1CS, proving key, verifying key, witness vector and h elements
-func NewZKeyFromGnark(r1cs constraint.ConstraintSystem, pk groth16.ProvingKey, vk groth16.VerifyingKey, witnessVector fr.Vector, h []fr.Element) (*ZKey, error) {
+func NewZKeyFromGnark(r1cs constraint.ConstraintSystem, pk groth16.ProvingKey, vk groth16.VerifyingKey, witnessVector []fr.Element, h []fr.Element) (*ZKey, error) {
 	zkey := &ZKey{
 		Version:          1,
 		NumberOfSections: 9, // Support for 9 sections (sections 1-9)
@@ -23,7 +23,10 @@ func NewZKeyFromGnark(r1cs constraint.ConstraintSystem, pk groth16.ProvingKey, v
 	}
 
 	// Set the magic bytes "zkey"
+	// Debug the issue - print bytes before and after copying
+	fmt.Printf("Magic bytes before: %v\n", zkey.Magic[:])
 	copy(zkey.Magic[:], []byte("zkey"))
+	fmt.Printf("Magic bytes after copy: %v (as string: %s)\n", zkey.Magic[:], string(zkey.Magic[:]))
 
 	// Set field sizes for BN254
 	zkey.N8q = 32 // BN254 field element size in bytes
@@ -151,7 +154,26 @@ func NewZKeyFromGnark(r1cs constraint.ConstraintSystem, pk groth16.ProvingKey, v
 	if !aField.IsValid() {
 		return nil, fmt.Errorf("A points field not found in G1")
 	}
-	zkey.PointsA = aField.Interface().([]bn254.G1Affine)
+	pointsA := aField.Interface().([]bn254.G1Affine)
+	
+	// Check if points_a needs padding to match witness length
+	pointsALen := len(pointsA)
+	witnessLen := len(witnessVector)
+	fmt.Printf("Points A length: %d, Witness vector length: %d\n", pointsALen, witnessLen)
+	
+	if witnessLen > pointsALen {
+		// Extend points_a with zero/infinity points for debugging
+		paddedPointsA := make([]bn254.G1Affine, witnessLen)
+		copy(paddedPointsA, pointsA)
+		
+		// Add zero/infinity points for padding
+		// (the default zero value for G1Affine is the point at infinity)
+		
+		fmt.Printf("Padded points_a from %d to %d elements\n", pointsALen, witnessLen)
+		zkey.PointsA = paddedPointsA
+	} else {
+		zkey.PointsA = pointsA
+	}
 
 	// Section 6: Points B1 (G1)
 	b1Field := g1Field.FieldByName("B")

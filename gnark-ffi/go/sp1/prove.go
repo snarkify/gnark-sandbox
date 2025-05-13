@@ -193,54 +193,19 @@ func ProveGroth16(dataDir string, witnessPath string) Proof {
 	fmt.Println("=== ProveGroth16 is calling groth16.Prove with verification key initialized:", globalVkInitialized)
 
 	// Set our intercept callback function that will be called from the Prove function
-	groth16bn254.ProveInterceptCallback = func(r1cs *bn254cs.R1CS, pk *groth16bn254.ProvingKey, fullWitness interface{}, vk *groth16bn254.VerifyingKey, h []fr.Element) {
-		fmt.Println("Converting witness to circom wtns format")
-
-		// Direct access to the fr.Vector
-		frVector, ok := fullWitness.(fr.Vector)
-		if !ok {
-			fmt.Printf("Error: fullWitness is not a fr.Vector type, it's %T\n", fullWitness)
-			return
-		}
-
-		// Convert directly to []*big.Int for the witness converter
-		bigInts := make([]*big.Int, len(frVector))
-		for i, e := range frVector {
-			bigInts[i] = new(big.Int)
-			e.BigInt(bigInts[i])
-		}
-
-		// Get number of public inputs from the R1CS
-		numPublic := uint32(r1cs.GetNbPublicVariables())
-
-		// Create the witness converter directly
-		wtnsConverter := gnark2circomWitness.NewWtnsConverter(bigInts, numPublic)
-
-		// Define the path where to save the wtns file
-		wtnsPath := dataDir + "/witness.wtns"
-
-		// Serialize to file
-		err := wtnsConverter.SerializeToFile(wtnsPath)
-		if err != nil {
-			fmt.Printf("Error writing witness file: %v\n", err)
-			return
-		}
-
-		fmt.Printf("Witness successfully saved to %s\n", wtnsPath)
-
-		// Next step: create and serialize zkey file
+	groth16bn254.ProveInterceptCallback = func(r1cs *bn254cs.R1CS, pk *groth16bn254.ProvingKey, fullWitness []fr.Element, vk *groth16bn254.VerifyingKey, h []fr.Element) {
 		fmt.Println("Converting to zkey format")
 
 		// Create a ZKey from the R1CS, proving key, verifying key, and h elements
 		// Pass the fr.Vector directly for the witness parameter
-		zkeyConverter, err := gnark2circomZkey.NewZKeyFromGnark(r1cs, pk, vk, frVector, h)
+		zkeyConverter, err := gnark2circomZkey.NewZKeyFromGnark(r1cs, pk, vk, fullWitness, h)
 		if err != nil {
 			fmt.Printf("Error creating zkey converter: %v\n", err)
 			return
 		}
 
 		// Define the path where to save the zkey file
-		zkeyPath := dataDir + "/groth16_circuit.zkey"
+		zkeyPath := dataDir + "/sp1_circuit.zkey"
 
 		// Serialize to file
 		err = zkeyConverter.SerializeToFile(zkeyPath)
@@ -250,6 +215,47 @@ func ProveGroth16(dataDir string, witnessPath string) Proof {
 		}
 
 		fmt.Printf("Zkey successfully saved to %s\n", zkeyPath)
+		fmt.Println("Converting witness to circom wtns format")
+
+		// Get length of pk.G1.A for padding witness to match
+		pointsALen := len(pk.G1.A)
+		fmt.Printf("Points A length: %d, Full witness length: %d\n", pointsALen, len(fullWitness))
+
+		// Convert to []*big.Int with padding to match points_a length
+		witnessLenWithPadding := max(pointsALen, len(fullWitness))
+		bigInts := make([]*big.Int, witnessLenWithPadding)
+		
+		// Copy existing witness values
+		for i := 0; i < len(fullWitness); i++ {
+			bigInts[i] = new(big.Int)
+			fullWitness[i].BigInt(bigInts[i])
+		}
+		
+		// Add padding if needed
+		for i := len(fullWitness); i < pointsALen; i++ {
+			bigInts[i] = new(big.Int)
+			// Initialize padding values to zero
+		}
+		
+		fmt.Printf("Padded witness to length: %d\n", len(bigInts))
+
+		// Get number of public inputs from the R1CS
+		numPublic := uint32(r1cs.GetNbPublicVariables())
+
+		// Create the witness converter directly
+		wtnsConverter := gnark2circomWitness.NewWtnsConverter(bigInts, numPublic)
+
+		// Define the path where to save the wtns file
+		wtnsPath := dataDir + "/sp1_witness.wtns"
+
+		// Serialize to file
+		err = wtnsConverter.SerializeToFile(wtnsPath)
+		if err != nil {
+			fmt.Printf("Error writing witness file: %v\n", err)
+			return
+		}
+
+		fmt.Printf("Witness successfully saved to %s\n", wtnsPath)
 	}
 
 	// Generate the proof with verification key

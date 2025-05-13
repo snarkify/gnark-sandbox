@@ -1,6 +1,7 @@
 package witness
 
 import (
+	"fmt"
 	"bytes"
 	"encoding/binary"
 	"math/big"
@@ -79,6 +80,28 @@ func (wc *WtnsConverter) SerializeToCircomWitness() []byte {
 
 	// Write section 2 length
 	binary.Write(buffer, binary.LittleEndian, uint64(witnessSize))
+
+	// Print first 100 elements of witness for verification
+	fmt.Printf("Serializing witness with %d total elements\n", len(wc.Witness))
+	fmt.Println("First 100 witness elements (or fewer if witness is smaller):")
+	maxElements := 100
+	if len(wc.Witness) < maxElements {
+		maxElements = len(wc.Witness)
+	}
+	for i := 0; i < maxElements; i++ {
+		// Print non-zero values to make it easier to see the padding
+		if i < len(wc.Witness) && wc.Witness[i].String() != "0" {
+			fmt.Printf("[%d]: %s\n", i, wc.Witness[i].String())
+		}
+	}
+	// Print a summary of zero values at the end (likely padding)
+	zeroCount := 0
+	for i := 0; i < len(wc.Witness); i++ {
+		if wc.Witness[i].String() == "0" {
+			zeroCount++
+		}
+	}
+	fmt.Printf("Total zero values in witness: %d (may include padding)\n", zeroCount)
 
 	// Write the "one" wire (always first)
 	oneBytes := make([]byte, wc.N8)

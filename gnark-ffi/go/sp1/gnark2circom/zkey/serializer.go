@@ -27,7 +27,7 @@ func ToMontgomery(value *big.Int) fr.Element {
 	return element
 }
 
-// Serialize G1 point for zkey format (converts from affine to projective)
+// Serialize G1 point for zkey format (affine coordinates only)
 func SerializeG1(point bn254.G1Affine) []byte {
 	// Convert from Montgomery form to standard form
 	buffer := new(bytes.Buffer)
@@ -49,11 +49,8 @@ func SerializeG1(point bn254.G1Affine) []byte {
 	y.FillBytes(yBytes)
 	buffer.Write(yBytes)
 
-	// For projective, add Z=1 (32 bytes)
-	// This is the standard representation expected by snarkjs
-	zBytes := make([]byte, 32)
-	big.NewInt(1).FillBytes(zBytes)
-	buffer.Write(zBytes)
+	// Note: We do NOT add the Z coordinate here to match what the Rust parser expects
+	// The Rust code only reads X and Y (64 bytes total) in read_g1()
 
 	return buffer.Bytes()
 }
@@ -76,33 +73,33 @@ func SerializeG2(point bn254.G2Affine) []byte {
 	point.Y.A0.BigInt(y0)
 	point.Y.A1.BigInt(y1)
 
-	// IMPORTANT: SnarkJS for BN254 expects coordinates in a SPECIFIC ORDER
-	// For G2 points, the order needs to be: (x1, x0, y1, y0, z1, z0)
-	// This is reversed from what might be expected
-	x1Bytes := make([]byte, 32)
+	// Based on Rust's read_g2 method, we need to write:
+	// 1. x-coordinate (64 bytes) - composed of x0 and x1, each 32 bytes
+	// 2. y-coordinate (64 bytes) - composed of y0 and y1, each 32 bytes
+
+	// Prepare component bytes with proper padding (32 bytes each)
 	x0Bytes := make([]byte, 32)
-	y1Bytes := make([]byte, 32)
+	x1Bytes := make([]byte, 32)
 	y0Bytes := make([]byte, 32)
-	z1Bytes := make([]byte, 32) // Z = 0 + 1i (2 components for projective)
-	z0Bytes := make([]byte, 32)
+	y1Bytes := make([]byte, 32)
 
-	// Ensure proper padding to exactly 32 bytes for each component
-	x1.FillBytes(x1Bytes)
+	// Fill bytes for each component
 	x0.FillBytes(x0Bytes)
-	y1.FillBytes(y1Bytes)
+	x1.FillBytes(x1Bytes)
 	y0.FillBytes(y0Bytes)
+	y1.FillBytes(y1Bytes)
 
-	// Z = 1 for affine to projective conversion (z0=1, z1=0)
-	big.NewInt(0).FillBytes(z1Bytes)
-	big.NewInt(1).FillBytes(z0Bytes)
-
-	// Write all components in SnarkJS expected order
-	buffer.Write(x1Bytes)
+	// Write X coordinate (64 bytes total)
+	// Important: Order matters! The Rust code expects [x0, x1] (64 bytes)
 	buffer.Write(x0Bytes)
-	buffer.Write(y1Bytes)
+	buffer.Write(x1Bytes)
+
+	// Write Y coordinate (64 bytes total)
+	// Important: Order matters! The Rust code expects [y0, y1] (64 bytes)
 	buffer.Write(y0Bytes)
-	buffer.Write(z1Bytes)
-	buffer.Write(z0Bytes)
+	buffer.Write(y1Bytes)
+
+	// Note: We do NOT include Z coordinates to match the Rust parser expectations
 
 	return buffer.Bytes()
 }
@@ -119,8 +116,12 @@ func (zk *ZKey) SerializeHeader() []byte {
 	buffer := new(bytes.Buffer)
 
 	// Write magic ("zkey"), version (1), and number of sections (9)
-	// This must match exactly with snarkjs expectations
-	buffer.Write(zk.Magic[:])
+	// This must match exactly with snarkjs AND Rust code expectations
+	// Debug the magic bytes
+	fmt.Printf("Writing magic bytes: %v (as string: %s)\n", zk.Magic[:], string(zk.Magic[:]))
+
+	// Write the literal "zkey" string directly instead of using the Magic field
+	buffer.Write([]byte("zkey"))
 	binary.Write(buffer, binary.LittleEndian, zk.Version)
 	binary.Write(buffer, binary.LittleEndian, zk.NumberOfSections)
 
@@ -131,151 +132,314 @@ func (zk *ZKey) SerializeHeader() []byte {
 // This method serializes in the exact format defined in the Rust struct
 func (zk *ZKey) SerializeToZKeyBinary() []byte {
 	buffer := new(bytes.Buffer)
+	startPos := 0
+
+	// Print overview of what we're serializing
+	fmt.Printf("Serializing ZKey Section 2: n8q=%d, n8r=%d, numVars=%d, numPublic=%d, domainSize=%d, power=%d\n",
+		zk.N8q, zk.N8r, zk.NumVars, zk.NumPublic, zk.DomainSize, zk.Power)
 
 	// Write n8q (field element size for Q) - 4 bytes uint32
 	binary.Write(buffer, binary.LittleEndian, zk.N8q)
+	fmt.Printf("  Wrote n8q=%d, bytes %d-%d (4 bytes)\n", zk.N8q, startPos, buffer.Len()-1)
+	startPos = buffer.Len()
 
-	// Write q (base field modulus) - variable size
-	// Convert big.Int to byte slice, ensuring proper size
+	// Write q (base field modulus) - variable size (n8q bytes)
 	qBytes := SerializeBigInt(zk.Q, int(zk.N8q))
 	buffer.Write(qBytes)
+	fmt.Printf("  Wrote Q modulus, bytes %d-%d (%d bytes)\n", startPos, buffer.Len()-1, len(qBytes))
+	startPos = buffer.Len()
 
 	// Write n8r (field element size for R) - 4 bytes uint32
 	binary.Write(buffer, binary.LittleEndian, zk.N8r)
+	fmt.Printf("  Wrote n8r=%d, bytes %d-%d (4 bytes)\n", zk.N8r, startPos, buffer.Len()-1)
+	startPos = buffer.Len()
 
-	// Write r (scalar field modulus) - variable size
+	// Write r (scalar field modulus) - variable size (n8r bytes)
 	rBytes := SerializeBigInt(zk.R, int(zk.N8r))
 	buffer.Write(rBytes)
+	fmt.Printf("  Wrote R modulus, bytes %d-%d (%d bytes)\n", startPos, buffer.Len()-1, len(rBytes))
+	startPos = buffer.Len()
 
 	// Write n_vars (number of variables) - 4 bytes uint32
 	binary.Write(buffer, binary.LittleEndian, zk.NumVars)
+	fmt.Printf("  Wrote NumVars=%d, bytes %d-%d (4 bytes)\n", zk.NumVars, startPos, buffer.Len()-1)
+	startPos = buffer.Len()
 
 	// Write n_public (number of public inputs) - 4 bytes uint32
 	binary.Write(buffer, binary.LittleEndian, zk.NumPublic)
+	fmt.Printf("  Wrote NumPublic=%d, bytes %d-%d (4 bytes)\n", zk.NumPublic, startPos, buffer.Len()-1)
+	startPos = buffer.Len()
 
 	// Write domain_size - 4 bytes uint32
 	binary.Write(buffer, binary.LittleEndian, zk.DomainSize)
-
-	// Write power (log2 of domain size) - 4 bytes uint32
-	binary.Write(buffer, binary.LittleEndian, zk.Power)
+	fmt.Printf("  Wrote DomainSize=%d, bytes %d-%d (4 bytes)\n", zk.DomainSize, startPos, buffer.Len()-1)
+	startPos = buffer.Len()
+	
+	// Note: We don't write Power explicitly because the Rust code calculates it from domain_size
 
 	// Write curve points - convert from affine to projective
 	// Write vk_alpha_1 (G1 point) - fixed size
-	buffer.Write(SerializeG1(zk.VkAlpha1))
+	g1Alpha := SerializeG1(zk.VkAlpha1)
+	buffer.Write(g1Alpha)
+	fmt.Printf("  Wrote VkAlpha1 (G1), bytes %d-%d (%d bytes)\n", startPos, buffer.Len()-1, len(g1Alpha))
+	startPos = buffer.Len()
 
 	// Write vk_beta_1 (G1 point) - fixed size
-	buffer.Write(SerializeG1(zk.VkBeta1))
+	g1Beta := SerializeG1(zk.VkBeta1)
+	buffer.Write(g1Beta)
+	fmt.Printf("  Wrote VkBeta1 (G1), bytes %d-%d (%d bytes)\n", startPos, buffer.Len()-1, len(g1Beta))
+	startPos = buffer.Len()
 
 	// Write vk_beta_2 (G2 point) - fixed size
-	buffer.Write(SerializeG2(zk.VkBeta2))
+	g2Beta := SerializeG2(zk.VkBeta2)
+	buffer.Write(g2Beta)
+	fmt.Printf("  Wrote VkBeta2 (G2), bytes %d-%d (%d bytes)\n", startPos, buffer.Len()-1, len(g2Beta))
+	startPos = buffer.Len()
 
 	// Write vk_gamma_2 (G2 point) - fixed size
-	buffer.Write(SerializeG2(zk.VkGamma2))
+	g2Gamma := SerializeG2(zk.VkGamma2)
+	buffer.Write(g2Gamma)
+	fmt.Printf("  Wrote VkGamma2 (G2), bytes %d-%d (%d bytes)\n", startPos, buffer.Len()-1, len(g2Gamma))
+	startPos = buffer.Len()
 
 	// Write vk_delta_1 (G1 point) - fixed size
-	buffer.Write(SerializeG1(zk.VkDelta1))
+	g1Delta := SerializeG1(zk.VkDelta1)
+	buffer.Write(g1Delta)
+	fmt.Printf("  Wrote VkDelta1 (G1), bytes %d-%d (%d bytes)\n", startPos, buffer.Len()-1, len(g1Delta))
+	startPos = buffer.Len()
 
 	// Write vk_delta_2 (G2 point) - fixed size
-	buffer.Write(SerializeG2(zk.VkDelta2))
+	g2Delta := SerializeG2(zk.VkDelta2)
+	buffer.Write(g2Delta)
+	fmt.Printf("  Wrote VkDelta2 (G2), bytes %d-%d (%d bytes)\n", startPos, buffer.Len()-1, len(g2Delta))
+
+	// Summary of all point serialization sizes
+	fmt.Printf("Point serialization sizes: G1=%d bytes, G2=%d bytes\n",
+		len(g1Alpha), len(g2Beta))
+
+	// Total section size
+	fmt.Printf("Total section 2 size: %d bytes\n", buffer.Len())
 
 	return buffer.Bytes()
 }
 
 // SerializeToFile writes the ZKey binary to a file
 func (zk *ZKey) SerializeToFile(filePath string) error {
-	// First create a complete buffer with all sections
-	zkeyFile := new(bytes.Buffer)
-	
-	// NOTE ON SECTION NUMBERING:
-	// The zkey format uses 1-based section IDs that match the section numbers.
-	// Section 1 contains the protocol identifier (Groth16=1, Plonk=2, etc.)
-	// Section 2 contains curve parameters and verification key data
-	// Sections 3-9 contain other proof system components
-	
+	// Validate that all required sections have data
+	if zk.Q == nil || zk.R == nil {
+		return fmt.Errorf("missing required field modulus values (Q or R)")
+	}
+
+	if zk.VkAlpha1.X.IsZero() && zk.VkAlpha1.Y.IsZero() {
+		return fmt.Errorf("missing required vk_alpha_1 point")
+	}
+
+	if zk.VkBeta1.X.IsZero() && zk.VkBeta1.Y.IsZero() {
+		return fmt.Errorf("missing required vk_beta_1 point")
+	}
+
+	if zk.VkBeta2.X.A0.IsZero() && zk.VkBeta2.X.A1.IsZero() &&
+	   zk.VkBeta2.Y.A0.IsZero() && zk.VkBeta2.Y.A1.IsZero() {
+		return fmt.Errorf("missing required vk_beta_2 point")
+	}
+
+	if zk.VkGamma2.X.A0.IsZero() && zk.VkGamma2.X.A1.IsZero() &&
+	   zk.VkGamma2.Y.A0.IsZero() && zk.VkGamma2.Y.A1.IsZero() {
+		return fmt.Errorf("missing required vk_gamma_2 point")
+	}
+
+	if zk.VkDelta1.X.IsZero() && zk.VkDelta1.Y.IsZero() {
+		return fmt.Errorf("missing required vk_delta_1 point")
+	}
+
+	if zk.VkDelta2.X.A0.IsZero() && zk.VkDelta2.X.A1.IsZero() &&
+	   zk.VkDelta2.Y.A0.IsZero() && zk.VkDelta2.Y.A1.IsZero() {
+		return fmt.Errorf("missing required vk_delta_2 point")
+	}
+
+	// Check that all required sections are present
+	if len(zk.IC) == 0 {
+		return fmt.Errorf("section 3 (IC points) is empty")
+	}
+
+	// For Groth16, we need coefficients
+	if len(zk.Coeffs) == 0 && len(zk.SValues) == 0 {
+		return fmt.Errorf("section 4 (Coefficients) is empty")
+	}
+
+	if len(zk.PointsA) == 0 {
+		return fmt.Errorf("section 5 (Points A) is empty")
+	}
+
+	if len(zk.PointsB1) == 0 {
+		return fmt.Errorf("section 6 (Points B1) is empty")
+	}
+
+	if len(zk.PointsB2) == 0 {
+		return fmt.Errorf("section 7 (Points B2) is empty")
+	}
+
+	if len(zk.PointsC) == 0 {
+		return fmt.Errorf("section 8 (Points C) is empty")
+	}
+
+	if len(zk.PointsH) == 0 {
+		return fmt.Errorf("section 9 (Points H) is empty")
+	}
+
+	// First create the output file to write to
+	outFile, err := os.Create(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to create output file: %w", err)
+	}
+	defer outFile.Close()
+
+	// First, prepare all section data buffers
+	fmt.Println("=== Preparing all section data ===")
+	headerData := zk.SerializeHeader()
+
+	// Section 1: Protocol ID (Groth16 = 1)
+	section1Buffer := new(bytes.Buffer)
+	binary.Write(section1Buffer, binary.LittleEndian, uint32(1)) // Groth16 = 1
+	section1Data := section1Buffer.Bytes()
+	section1Size := uint64(len(section1Data))
+
+	// Section 2: Curve parameters and verification key
+	section2Data := zk.SerializeToZKeyBinary()
+	section2Size := uint64(len(section2Data))
+
+	// Section 3: IC (verification key points)
+	section3Data := zk.SerializeICSection()
+	section3Size := uint64(len(section3Data))
+
+	// Section 4: Coefficients
+	section4Data := zk.SerializeCoeffsSection()
+	section4Size := uint64(len(section4Data))
+
+	// Section 5: Points A
+	section5Data := zk.SerializePointsASection()
+	section5Size := uint64(len(section5Data))
+
+	// Section 6: Points B1
+	section6Data := zk.SerializePointsB1Section()
+	section6Size := uint64(len(section6Data))
+
+	// Section 7: Points B2
+	section7Data := zk.SerializePointsB2Section()
+	section7Size := uint64(len(section7Data))
+
+	// Section 8: Points C
+	section8Data := zk.SerializePointsCSection()
+	section8Size := uint64(len(section8Data))
+
+	// Section 9: Points H
+	section9Data := zk.SerializePointsHSection()
+	section9Size := uint64(len(section9Data))
+
+	fmt.Println("=== Section Sizes ===")
+	fmt.Printf("Header size: %d bytes\n", len(headerData))
+	fmt.Printf("Section 1 (Protocol) size: %d bytes\n", section1Size)
+	fmt.Printf("Section 2 (Params) size: %d bytes\n", section2Size)
+	fmt.Printf("Section 3 (IC) size: %d bytes (%d points, %d bytes per point)\n", section3Size, len(zk.IC), int(section3Size))
+	fmt.Printf("Section 4 (Coeffs) size: %d bytes (%d entries, %d bytes per entry)\n", section4Size, len(zk.SValues), int(section4Size)-4/len(zk.SValues))
+	fmt.Printf("Section 5 (Points A) size: %d bytes (%d points)\n", section5Size, len(zk.PointsA))
+	fmt.Printf("Section 6 (Points B1) size: %d bytes (%d points)\n", section6Size, len(zk.PointsB1))
+	fmt.Printf("Section 7 (Points B2) size: %d bytes (%d points)\n", section7Size, len(zk.PointsB2))
+	fmt.Printf("Section 8 (Points C) size: %d bytes (%d points)\n", section8Size, len(zk.PointsC))
+	fmt.Printf("Section 9 (Points H) size: %d bytes (%d points)\n", section9Size, len(zk.PointsH))
+
+	// Now write everything to the file
+	fmt.Println("=== Writing file ===")
+
 	// Write the file header
-	zkeyFile.Write(zk.SerializeHeader())
+	_, err = outFile.Write(headerData)
+	if err != nil {
+		return fmt.Errorf("failed to write header: %w", err)
+	}
 
-	// Write Section 1: Protocol header (Groth16 = 1) 
-	// Section ID (1) - 4 bytes
-	binary.Write(zkeyFile, binary.LittleEndian, uint32(1))
-	// Section size - 8 bytes (protocol ID is 4 bytes)
-	binary.Write(zkeyFile, binary.LittleEndian, uint64(4))
-	// Protocol ID (Groth16 = 1) - 4 bytes
-	// CRUCIAL: SnarkJS expects exactly 1 for Groth16
-	binary.Write(zkeyFile, binary.LittleEndian, uint32(1))
+	// Write Section 1: Protocol ID
+	err = writeSectionToFile(outFile, 1, section1Size, section1Data)
+	if err != nil {
+		return fmt.Errorf("failed to write section 1: %w", err)
+	}
 
-	// Write Section 2: Curve parameters and verification key
-	// Section ID (2) - 4 bytes
-	binary.Write(zkeyFile, binary.LittleEndian, uint32(2))
+	// Write Section 2: Curve parameters
+	err = writeSectionToFile(outFile, 2, section2Size, section2Data)
+	if err != nil {
+		return fmt.Errorf("failed to write section 2: %w", err)
+	}
 
-	// Calculate section size
-	sectionData := zk.SerializeToZKeyBinary()
-	sectionSize := uint64(len(sectionData))
-
-	// Section size - 8 bytes
-	binary.Write(zkeyFile, binary.LittleEndian, sectionSize)
-
-	// Section data
-	zkeyFile.Write(sectionData)
-
-	// Write Section 3: IC (verification key points)
-	if len(zk.IC) > 0 {
-		sectionData := zk.SerializeICSection()
-		binary.Write(zkeyFile, binary.LittleEndian, uint32(3))
-		binary.Write(zkeyFile, binary.LittleEndian, uint64(len(sectionData)))
-		zkeyFile.Write(sectionData)
+	// Write Section 3: IC points
+	err = writeSectionToFile(outFile, 3, section3Size, section3Data)
+	if err != nil {
+		return fmt.Errorf("failed to write section 3: %w", err)
 	}
 
 	// Write Section 4: Coefficients
-	if len(zk.Coeffs) > 0 {
-		sectionData := zk.SerializeCoeffsSection()
-		binary.Write(zkeyFile, binary.LittleEndian, uint32(4))
-		binary.Write(zkeyFile, binary.LittleEndian, uint64(len(sectionData)))
-		zkeyFile.Write(sectionData)
+	err = writeSectionToFile(outFile, 4, section4Size, section4Data)
+	if err != nil {
+		return fmt.Errorf("failed to write section 4: %w", err)
 	}
 
 	// Write Section 5: Points A
-	if len(zk.PointsA) > 0 {
-		sectionData := zk.SerializePointsASection()
-		binary.Write(zkeyFile, binary.LittleEndian, uint32(5))
-		binary.Write(zkeyFile, binary.LittleEndian, uint64(len(sectionData)))
-		zkeyFile.Write(sectionData)
+	err = writeSectionToFile(outFile, 5, section5Size, section5Data)
+	if err != nil {
+		return fmt.Errorf("failed to write section 5: %w", err)
 	}
 
 	// Write Section 6: Points B1
-	if len(zk.PointsB1) > 0 {
-		sectionData := zk.SerializePointsB1Section()
-		binary.Write(zkeyFile, binary.LittleEndian, uint32(6))
-		binary.Write(zkeyFile, binary.LittleEndian, uint64(len(sectionData)))
-		zkeyFile.Write(sectionData)
+	err = writeSectionToFile(outFile, 6, section6Size, section6Data)
+	if err != nil {
+		return fmt.Errorf("failed to write section 6: %w", err)
 	}
 
 	// Write Section 7: Points B2
-	if len(zk.PointsB2) > 0 {
-		sectionData := zk.SerializePointsB2Section()
-		binary.Write(zkeyFile, binary.LittleEndian, uint32(7))
-		binary.Write(zkeyFile, binary.LittleEndian, uint64(len(sectionData)))
-		zkeyFile.Write(sectionData)
+	err = writeSectionToFile(outFile, 7, section7Size, section7Data)
+	if err != nil {
+		return fmt.Errorf("failed to write section 7: %w", err)
 	}
 
 	// Write Section 8: Points C
-	if len(zk.PointsC) > 0 {
-		sectionData := zk.SerializePointsCSection()
-		binary.Write(zkeyFile, binary.LittleEndian, uint32(8))
-		binary.Write(zkeyFile, binary.LittleEndian, uint64(len(sectionData)))
-		zkeyFile.Write(sectionData)
+	err = writeSectionToFile(outFile, 8, section8Size, section8Data)
+	if err != nil {
+		return fmt.Errorf("failed to write section 8: %w", err)
 	}
 
 	// Write Section 9: Points H
-	if len(zk.PointsH) > 0 {
-		sectionData := zk.SerializePointsHSection()
-		binary.Write(zkeyFile, binary.LittleEndian, uint32(9))
-		binary.Write(zkeyFile, binary.LittleEndian, uint64(len(sectionData)))
-		zkeyFile.Write(sectionData)
+	err = writeSectionToFile(outFile, 9, section9Size, section9Data)
+	if err != nil {
+		return fmt.Errorf("failed to write section 9: %w", err)
 	}
 
-	// Write the file to disk
-	return os.WriteFile(filePath, zkeyFile.Bytes(), 0644)
+	fmt.Println("=== File writing completed ===")
+	return nil
+}
+
+// Helper function to write a section to file with proper header
+func writeSectionToFile(file *os.File, sectionID uint32, sectionSize uint64, sectionData []byte) error {
+	// Write section ID
+	err := binary.Write(file, binary.LittleEndian, sectionID)
+	if err != nil {
+		return fmt.Errorf("failed to write section ID: %w", err)
+	}
+
+	// Write section size
+	err = binary.Write(file, binary.LittleEndian, sectionSize)
+	if err != nil {
+		return fmt.Errorf("failed to write section size: %w", err)
+	}
+
+	// Write section data
+	writedSize, err := file.Write(sectionData)
+	if err != nil {
+		return fmt.Errorf("failed to write section data: %w", err)
+	}
+
+	if uint64(writedSize) != sectionSize {
+		return fmt.Errorf("section size is not equal by writed bytes, %d != %d", sectionSize, writedSize)
+	}
+
+	return nil
 }
 
 // Serialize IC section (Section 3)
@@ -324,6 +488,7 @@ func (zk *ZKey) SerializeCoeffsSection() []byte {
 // Serialize Points A section (Section 5)
 func (zk *ZKey) SerializePointsASection() []byte {
 	buffer := new(bytes.Buffer)
+	fmt.Printf("Serializing Points A section with %d points\n", len(zk.PointsA))
 	for _, point := range zk.PointsA {
 		buffer.Write(SerializeG1(point))
 	}
