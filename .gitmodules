@@ -1,0 +1,4 @@
+[submodule "local-deps/gnark"]
+	path = local-deps/gnark
+	url = https://github.com/consensys/gnark.git
+	commit = cbb9025ce0fed5652cac06624fe512b269c6a8fd
